@@ -1,0 +1,117 @@
+#----------1 settings--------------------
+units           metal
+boundary        p p p
+atom_style      atomic
+timestep        0.002
+neighbor        2 bin
+neigh_modify    every 1 delay 0 check yes
+
+#----------2 model----------------
+
+read_data       HSNS_2.48nm.data
+mass            1 63.546      # Cu
+
+# potential
+pair_style      eam/alloy
+pair_coeff      * * Cu_mishin1.eam.alloy Cu
+
+write_data      first.lmp
+
+#----------3 energy minimize----------------
+
+min_style       cg                                     
+minimize        1e-10 1e-10 5000 5000                 
+
+#----------4 initialization ----------------
+
+timestep        0.002                                         
+thermo          1000
+thermo_style    custom step temp pxx pyy pzz vol pe ke etotal press             
+thermo_modify   flush yes 
+
+velocity        all create 300 8877423 loop local dist gaussian rot yes        
+dump            1 all atom 1000 atom1.lammpstrj                            
+
+#----------5 relax----------------
+
+fix             1 all npt temp 300 300 0.2 iso 0 0 2  
+run             10000   
+undump          1
+unfix           1
+
+write_data      relax.lmp
+
+#----------6 tension----------------
+reset_timestep  0
+
+variable        end_strain equal 0.12
+variable        srate equal 2.0E8 
+variable        srate1 equal "v_srate/1.0e12" 
+variable        timestep equal 0.002 
+variable        tensile_step equal v_end_strain/v_srate1/v_timestep 
+
+compute         PE all pe/atom   
+compute         KE all ke/atom 
+compute         eatoms all reduce sum c_KE
+
+#displace
+compute         myDIS all displace/atom
+
+#stress-strain
+
+variable           tmpz equal "lz"
+variable           L0 equal ${tmpz}
+variable           stress equal "-pzz/10000"        
+variable           estrain equal "(lz-v_L0)/v_L0"
+variable           tstrain equal "ln(lz/v_L0)"
+variable           shear equal "0.5*(-pzz/10000-0.5*(-pyy/10000-pxx/10000))"
+
+variable           px equal  "-pxx/10000"
+variable           pz equal "-pzz/10000"  
+variable           py equal "-pyy/10000"
+variable           n1 equal "v_tensile_step/300"
+variable           n2 equal "v_tensile_step/100"
+
+compute            new3d all temp
+compute            s all stress/atom NULL
+compute            v all voronoi/atom
+compute            stre1 all reduce sum c_s[1]
+variable           stress1 equal c_stre1/vol
+compute            stre2 all reduce sum c_s[2]
+variable           stress2 equal c_stre2/vol
+compute            stre3 all reduce sum c_s[3]
+variable           stress3 equal c_stre3/vol
+compute            stre4 all reduce sum c_s[4]
+variable           stress4 equal c_stre4/vol
+compute            stre5 all reduce sum c_s[5]
+variable           stress5 equal c_stre5/vol
+compute            stre6 all reduce sum c_s[6]
+variable           stress6 equal c_stre6/vol
+variable           stresstotal equal (v_stress1+v_stress2+v_stress3)/3
+variable           vonstress equal sqrt(((v_stress1-v_stress2)^2+(v_stress2-v_stress3)^2+(v_stress1-v_stress3)^2+6*(v_stress4^2+v_stress5^2+v_stress6^2))/2)  ######Von Mises Stress
+
+fix                def1 all print ${n1} "${estrain} ${tstrain} ${stress} ${vonstress} ${shear} ${px} ${pz} ${py}" file stress-strain1.data screen no
+fix                def2 all print ${n2} "${estrain} ${tstrain} ${stress} ${vonstress} ${shear} ${px} ${pz} ${py}" file stress-strain2.data screen no
+
+#output
+
+thermo          5000
+thermo_style    custom step temp pe c_eatoms ke etotal emol press pxx pyy pzz pxy pxz pyz v_stress1 v_stress2 v_stress3 v_stress4 v_stress5 v_stress6 v_vonstress vol lx ly lz 
+thermo_modify   temp new3d norm yes
+restart         50000  restart.*    # restart文件，重启计算命令
+
+#rdf
+compute         rdf all rdf 200                                                                                            
+fix             rdf all ave/time 500 10 5000 c_rdf[1] c_rdf[2] file tension.rdf mode vector                            
+
+#MSD
+compute         msd all msd com yes                                                                                
+fix             msd all ave/time 500 10 5000 c_msd[1] c_msd[2] c_msd[3] c_msd[4] file tension.msd mode scalar          
+
+dump            1 all custom 5000 dump.tension.* id mass type xs ys zs x y z c_PE c_KE c_myDIS[3] c_s[1] c_s[2] c_s[3] c_s[4] c_s[5] c_s[6] c_v[1]
+#  along the z direction at a strain rate of 2×10^8 s^(-1) until the engineering strain is reached over 600 ps
+fix             1 all npt temp 300 300 0.2 x 0 0 2 y 0 0 2 drag 0.4   
+fix             2 all deform 1 z erate ${srate1} units box remap x  
+run             ${tensile_step} 
+
+write_data      tension.lmp
