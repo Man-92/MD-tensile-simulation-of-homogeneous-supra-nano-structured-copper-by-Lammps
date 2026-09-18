@@ -5,7 +5,7 @@ This dataset accompanies the manuscript “Atomistic Direct Quantitative Evidenc
 
 | File | Description |
 | --- | --- |
-| `HSNS_2.48nm.data` | LAMMPS atomic configuration for the 2.48 nm model. The file contains 1,560,728 Cu atoms; its header identifies it as a Voronoi polycrystal with 576 grains. |
+| `HSNS_2.48nm.data` | LAMMPS atomic configuration for the 2.48 nm model. The file contains 1,560,728 Cu atoms; its header identifies it as a Voronoi polycrystal with 2304 grains. |
 | `in.tension.lmp` | LAMMPS input for energy minimization, equilibration, and tensile loading of the model. |
 | `Cu_mishin1.eam.alloy` | The Cu embedded-atom method (EAM) potential file used by the input. |
 
